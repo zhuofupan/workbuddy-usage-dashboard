@@ -403,23 +403,56 @@ convReq，也可能是系统补发），按提问时间轴切分才是用户认�
 | 套餐额度 / 当前剩余 / 刷新日 | `config.local.json` → `quota` | 不会 |
 | 手写会话名 | `config.local.json` → `sessionTitles` | 不会 |
 | 运行日志 / pid | `dashboard.log` / `dashboard.pid` | 不会 |
+| **账号标识**（账号 UUID、`accountIdentityKey`） | 运行时从 `~/.workbuddy/settings.json`、`connectors/*/connector-states.json` 现读 | 不会 |
+| **设备标识**（设备 UUID、主机名） | 运行时从 `~/.workbuddy/device-id` + `socket.gethostname()` 现读 | 不会 |
+| **本机记忆**（AI 协作产生的项目笔记、会话日志） | `.workbuddy/`、`~/.workbuddy/memory/` | 不会 |
 | 会话记录本身 | `~/.workbuddy/projects/**/*.jsonl`（只读，不复制） | 不会 |
 
-三件事保证不漏：
+> **关于账号与设备标识**：仓库里只有**读取它们的代码**，没有任何一个真实值 ——
+> 账号 UUID 和设备 UUID 都是运行时从本机文件读出来的。README 这一节描述的是
+> 「归属是怎么算的」，不是在公布某个账号是谁。
+
+四件事保证不漏：
 
 1. **个人数据集中在一个文件** —— `config.local.json`。散在多个文件里迟早漏一个，
    集中之后只要挡住一个名字就够了。
-2. **`.gitignore` 挡住它**，并且旧文件名（`quota.json` / `session-titles.json`）也一并挡住，
-   避免哪天又把旧文件加回来。
+2. **`.gitignore` 挡住它**，并且旧文件名（`quota.json` / `session-titles.json`）、
+   本机记忆目录（`.workbuddy/`、`**/memory/`）、会话记录（`*.jsonl`）、
+   身份文件（`device-id`）也一并挡住 —— 防止哪天被复制进项目目录再被误加。
 3. **启动器不写死绝对路径** —— Python 解释器是启动时探测的：
    先找 `%USERPROFILE%\.workbuddy\binaries\python\versions\*\python.exe`，
    找不到再回退 PATH 里的 `python`。写死路径等于把用户名带进仓库，而且对别人必然跑不起来。
+4. **提交前有脚本把关**（见下）—— 不靠人记得检查。
 
 **克隆这个仓库的人**：`cp config.example.json config.local.json` 再按需改；
 不改也能跑，只是没有额度数据和手写会话名。`config.local.json` 从来不会被提交。
 
-> 提交前自查：`git status --short` 里不该出现 `config.local.json`；
-> 想更保险就跑一遍 `git grep -n "<你的用户名>"`。
+### 提交前自查：一次命令扫干净
+
+```bash
+python tools/check_personal.py            # 工作区 + 已跟踪文件（日常提交前跑）
+python tools/check_personal.py --staged   # 只查暂存区
+python tools/check_personal.py --history  # 连全部 git 历史一起查（开源/发布前跑一次）
+```
+
+它会从**本机**读出身份标识（家目录路径、用户名、主机名、账号 UUID、设备 UUID），
+拿它们反查仓库，并确认那几个本地数据文件确实被忽略了。退出码 0 = 干净，1 = 有东西要处理。
+
+两个细节：
+
+- 脚本打印标识时**只显示前 6 位和长度** —— 否则「自查工具的输出」本身就成了新的泄漏点；
+- 脚本里**不写任何真实标识**，全部运行时读取，所以它可以安全地公开。
+
+想让它自动跑，装个提交钩子：
+
+```sh
+printf '#!/bin/sh\nexec python tools/check_personal.py --staged\n' > .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
+> 注意钩子只拦「新增的提交」。如果敏感内容**已经推送过**，
+> 删文件是没用的 —— blob 还留在历史里，得用 `git filter-repo` 重写历史，
+> 并把泄漏过的凭据作废轮换。
 
 ---
 
@@ -449,6 +482,7 @@ static/favicon.svg     图标本体（**绿色圆角方块 + 三根上升柱**�
 config.example.json    配置模板：复制成 config.local.json 再改（个人数据只放这一个文件）
 .gitignore             挡住 config.local.json、日志、pid 等本地产物
 tools/
+  check_personal.py       提交前自查：账号/设备标识、家目录路径、本机记忆有没有混进仓库
   check_deadcode.py       静态检查 app.js 的「顶层 return 死代码」（语法检查查不出来）
   sample_icon.py          取 exe/ico 的图标并采样真实像素颜色（配色不靠肉眼）
   compare_icons.py        官方图标 vs 本看板图标 并排对比图
