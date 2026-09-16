@@ -1,0 +1,273 @@
+/* WorkBuddy 用量看板 —— 浅色主题 */
+:root{
+  --bg:#f5f6f8; --card:#ffffff; --line:#e5e7eb; --line-soft:#f0f1f4;
+  --text:#1c1f23; --muted:#6b7280; --hint:#9aa1ab;
+  --blue:#2563eb; --blue-soft:#eff4ff;
+  --amber:#c2410c; --amber-soft:#fff4ed;
+  --green:#047857; --green-soft:#ecfdf5;
+  --violet:#6d28d9; --violet-soft:#f5f3ff;
+  --radius:12px;
+  --shadow:0 1px 2px rgba(16,24,40,.04), 0 4px 12px rgba(16,24,40,.04);
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font:16.5px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+code{font-family:ui-monospace,Consolas,"Courier New",monospace;background:var(--line-soft);padding:1px 5px;border-radius:5px;font-size:14.5px}
+h1{font-size:20.5px;font-weight:600;margin:0}
+h3{font-size:17.5px;font-weight:600;margin:0 0 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+h3 .hint{font-weight:400;color:var(--hint);font-size:15.5px}
+h3 .right{margin-left:auto;display:flex;align-items:center;gap:8px}
+
+/* 卡片标题里的小分段控件（维度切换）+ 小下拉（选日期） */
+.switch{display:flex;gap:3px;background:#eceef1;border-radius:8px;padding:2px}
+.switch button{border:0;background:transparent;border-radius:6px;padding:4px 11px;
+  font-size:15.5px;font-weight:500;color:var(--muted)}
+.switch button.on{background:#fff;color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(16,24,40,.1)}
+select.mini{font:inherit;font-size:15.5px;border:1px solid var(--line);border-radius:7px;
+  padding:3px 8px;background:#fff;color:var(--text);cursor:pointer}
+.num{text-align:right}
+/* 必须带 !important：.panel 也定义了 display，同优先级下按书写顺序后者会赢 */
+.hide{display:none !important}
+
+/* ---------- 顶栏 ---------- */
+.topbar{
+  position:sticky; top:0; z-index:20; background:rgba(255,255,255,.92);
+  backdrop-filter:saturate(160%) blur(8px);
+  border-bottom:1px solid var(--line);
+  padding:14px 24px; display:flex; align-items:center; justify-content:space-between;
+  gap:16px; flex-wrap:wrap;
+}
+.brand{display:flex; align-items:center; gap:11px}
+/* 页头图标 = favicon.svg 本体，不再用 CSS 画方块 —— 一处改色三处同步
+   （页头 / 标签页 / 桌面快捷方式），省得以后又长得不一样 */
+.logo{width:36px;height:36px;display:block;flex:none}
+/* 注意：这里必须限定在 .brand 内。曾经写成全局的 .sub{display:flex}，
+   结果把 <table class="sub"> 也变成了 flex 容器，表头与表体的列宽各自计算、彻底错位。 */
+.brand .sub{margin:2px 0 0;color:var(--muted);font-size:14.5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.sep{color:var(--line)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--hint);display:inline-block;flex:none}
+.dot.live{background:#16a34a;box-shadow:0 0 0 3px rgba(22,163,74,.14)}
+.dot.err{background:#dc2626;box-shadow:0 0 0 3px rgba(220,38,38,.14)}
+.idents{display:flex;gap:8px;flex-wrap:wrap}
+.topright{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
+
+/* 计量口径切换：积分 / Tokens */
+.metric-switch{display:flex;gap:3px;background:#eceef1;border-radius:9px;padding:3px;flex:none}
+.metric-switch button{
+  border:0;background:transparent;border-radius:7px;padding:6px 15px;color:var(--muted);
+  font-size:15.5px;font-weight:600;transition:.12s
+}
+/* 激活态用对应口径的颜色填充，和图表/排行/高亮列的颜色形成呼应 */
+.metric-switch button.on{background:#fff;color:var(--text);box-shadow:0 1px 2px rgba(16,24,40,.09)}
+.metric-switch button.on[data-metric="credit"]{background:var(--amber);color:#fff;box-shadow:0 1px 3px rgba(194,65,12,.28)}
+.metric-switch button.on[data-metric="tokens"]{background:var(--blue);color:#fff;box-shadow:0 1px 3px rgba(37,99,235,.28)}
+.badge{
+  display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--line);
+  border-radius:9px;padding:6px 11px;font-size:14.5px;box-shadow:var(--shadow)
+}
+.badge b{font-weight:600;font-size:15px}
+.badge .k{color:var(--hint)}
+.badge .v{font-family:ui-monospace,Consolas,monospace;color:var(--muted)}
+
+.wrap{max-width:1400px;margin:0 auto;padding:18px 24px 56px;display:flex;flex-direction:column;gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:stretch}
+@media (max-width:960px){.cols{grid-template-columns:1fr}}
+/* 并排时让卡片填满整行高度：图跟着卡片长高，避免图下方留一大片空白 */
+.card.fill{display:flex;flex-direction:column}
+.card.fill .fillchart{flex:1 1 auto;min-height:150px;overflow:hidden}
+
+/* ---------- 本月额度条（账户级，不受筛选影响） ---------- */
+.monthbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 22px;padding:13px 18px;
+  border-color:#e3ecff;background:linear-gradient(100deg,#f8fbff,#fff 62%)}
+.monthbar .mb-tag{font-size:15px;font-weight:600;color:var(--blue);background:var(--blue-soft);
+  border:1px solid #dbe6ff;border-radius:7px;padding:3px 9px;white-space:nowrap}
+.monthbar .mb-item{display:flex;align-items:baseline;gap:6px;font-size:15px;color:var(--muted);white-space:nowrap}
+.monthbar .mb-item b{font-size:19px;font-weight:600;color:var(--text);font-family:ui-monospace,Consolas,monospace}
+.monthbar .mb-item.warn b{color:var(--amber)}
+.monthbar .mb-progress{flex:1 1 220px;min-width:180px;height:7px;border-radius:4px;
+  background:var(--line-soft);overflow:hidden;position:relative}
+.monthbar .mb-progress i{display:block;height:100%;background:linear-gradient(90deg,#fdba74,var(--amber))}
+.monthbar .mb-hint{font-size:14px;color:var(--hint);flex:1 1 100%;line-height:1.6}
+.monthbar a{color:var(--blue);text-decoration:none}
+.monthbar a:hover{text-decoration:underline}
+.monthbar code{font-size:13.5px}
+.mb-set{margin-left:auto;flex:none}
+
+/* 额度设置表单（点「设置」在额度条内展开） */
+.cfgform{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 18px;width:100%}
+.cfgform label{display:flex;align-items:center;gap:7px;font-size:15px;color:var(--muted)}
+.cfgform label>span{white-space:nowrap}
+.cfgform input{width:118px;font:inherit;font-size:16px;padding:6px 9px;border:1px solid var(--line);
+  border-radius:8px;background:#fff;color:var(--text);text-align:right;
+  font-variant-numeric:tabular-nums}
+.cfgform input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-soft)}
+.cfgform em{font-style:normal;color:var(--hint);font-size:14px}
+.cfgform .cfgmsg{font-size:14.5px;color:#dc2626}
+.cfgform .mb-hint{flex:1 1 100%;margin-top:2px}
+
+/* ---------- 筛选（次要区域：压紧、降低视觉权重） ---------- */
+.filterbar{padding:10px 14px}
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
+.fld{display:flex;flex-direction:column;gap:3px;font-size:14px;color:var(--muted)}
+.fld>span{font-weight:500}
+.fld.grow{flex:1 1 200px}
+.fld input,.fld select{
+  font:inherit;font-size:15.5px;color:var(--text);background:#fff;
+  border:1px solid var(--line);border-radius:8px;padding:6px 9px;min-width:118px;max-width:100%;
+}
+.fld.grow input{width:100%;min-width:160px}
+.fld select{max-width:230px}
+.fld input:focus,.fld select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+.fld.actions{flex-direction:row;gap:8px;margin-left:auto}
+button{
+  font:inherit;font-size:15.5px;border-radius:8px;padding:7px 13px;cursor:pointer;
+  border:1px solid var(--line);background:#fff;color:var(--text);transition:.12s
+}
+button:hover{border-color:#cbd2dd;background:#fafbfc}
+button.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+button.primary:hover{background:#1d4ed8}
+button:disabled{opacity:.45;cursor:default}
+.note{margin:10px 0 0;color:var(--hint);font-size:14px;line-height:1.6}
+
+/* ---------- KPI ---------- */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));gap:12px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  padding:13px 15px 14px;box-shadow:var(--shadow);min-width:0}
+.kpi .k{color:var(--muted);font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 数字与单位分开渲染：同字号下「亿/万」这类中文字形会显得比数字大一大截，
+   拆成 数字 23px + 单位 13.5px 才像正常的仪表盘；整行 nowrap 防止被拆行 */
+.kpi .v{margin-top:3px;display:flex;align-items:baseline;gap:2px;white-space:nowrap}
+.kpi .v .num{font-size:27px;font-weight:600;letter-spacing:-.4px;line-height:1.15;
+  font-variant-numeric:tabular-nums}
+.kpi .v .unit{font-size:16.5px;font-weight:600}
+.kpi .v.lg .num{font-size:30px;letter-spacing:-.5px}
+.kpi .v.lg .unit{font-size:17.5px}
+.kpi .v.xl .num{font-size:46px;letter-spacing:-1.2px;line-height:1.05}
+.kpi .v.xl .unit{font-size:20px}
+.kpi small{display:block;margin-top:2px;font-size:13.5px;font-weight:500;color:var(--hint);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* 主角卡：当前口径的主指标 + 另一口径对照 + 轮次。一屏只留一个视觉焦点。 */
+.kpi.hero{grid-column:1/-1;display:flex;align-items:flex-end;gap:30px;flex-wrap:wrap;
+  padding:18px 22px;border-color:#dbe6ff;background:linear-gradient(135deg,#f7faff,#fff 55%)}
+.kpi.hero .block{display:flex;flex-direction:column;min-width:0}
+.kpi.hero .note{font-size:14.5px;color:var(--muted);margin-top:5px;white-space:nowrap}
+.kpi.hero .divider{width:1px;align-self:stretch;background:var(--line)}
+.kpi.hero.is-credit .block.main .v{color:var(--amber)}
+.kpi.hero.is-tokens .block.main .v{color:var(--blue)}
+.kpi .bar{height:3px;border-radius:2px;background:var(--line-soft);margin-top:9px;overflow:hidden}
+.kpi .bar i{display:block;height:100%;background:var(--blue)}
+
+/* ---------- tabs ---------- */
+.tabs{display:flex;gap:4px;background:#eceef1;border-radius:10px;padding:3px;width:fit-content}
+.tabs button{border:0;background:transparent;border-radius:7px;padding:6px 15px;color:var(--muted);font-size:15.5px}
+.tabs button.on{background:#fff;color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(16,24,40,.08)}
+.panel{display:flex;flex-direction:column;gap:16px}
+
+/* ---------- 图表 ---------- */
+.chart-block{display:flex;flex-direction:column;gap:4px}
+.chart{width:100%}
+.chart.small{height:106px}
+.chart svg{display:block;width:100%;overflow:visible}
+.axis-label{fill:var(--muted);font-size:14px;font-weight:500}
+.axis-line{stroke:var(--line);stroke-width:1}
+.legend{display:flex;gap:6px 18px;flex-wrap:wrap;margin-top:10px;font-size:15px;color:var(--muted)}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2.5px;margin-right:5px;vertical-align:-1px}
+/* 分布趋势的图例：色块 + 名称 + 该项合计 */
+.legend .lg{display:inline-flex;align-items:center;gap:6px;max-width:100%}
+.legend .lg i{width:14px;height:4px;border-radius:2px;margin:0;flex:none}
+.legend .lg b{font-family:ui-monospace,Consolas,monospace;font-weight:600;color:var(--text)}
+/* 图上方右对齐的「合计」行：跟折线同色，明确它是那条线的总和 */
+.chart-total{display:flex;justify-content:flex-end;align-items:baseline;gap:8px;
+  font-size:15px;color:var(--muted);margin:0 0 8px}
+.chart-total i{width:18px;height:4px;border-radius:2px;display:inline-block;flex:none}
+.chart-total b{font-size:23px;font-weight:600;font-family:ui-monospace,Consolas,monospace;
+  font-variant-numeric:tabular-nums;line-height:1.1}
+.chart-total em{font-style:normal;font-size:14.5px}
+
+/* ---------- 排行 ---------- */
+.ranklist{display:flex;flex-direction:column;gap:9px}
+.rankrow{display:grid;grid-template-columns:1fr 62px;gap:8px;align-items:center;font-size:15px}
+.rankrow .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rankrow .nm .sub2{color:var(--hint);font-size:13.5px;margin-left:6px}
+.rankrow .vv{text-align:right;font-family:ui-monospace,Consolas,monospace;color:var(--text);font-size:14.5px;white-space:nowrap}
+.rankrow .vv .pc{color:var(--hint);font-size:13px;margin-left:5px;font-family:inherit}
+.ranktrack{grid-column:1/-1;height:6px;background:var(--line-soft);border-radius:3px;overflow:hidden;margin-top:-3px}
+.ranktrack i{display:block;height:100%;background:linear-gradient(90deg,#93b4fb,#2563eb)}
+.ranktrack.amber i{background:linear-gradient(90deg,#fdba74,#c2410c)}
+
+/* ---------- 表格 ---------- */
+.tablewrap{overflow-x:auto;margin:0 -4px;position:relative}
+.scrollhint{font-size:13.5px;color:var(--hint);font-weight:400}
+table.grid{width:100%;border-collapse:collapse;font-size:15px;min-width:900px}
+table.grid th{
+  text-align:left;font-weight:500;color:var(--muted);font-size:14.5px;padding:0 8px 8px 0;
+  border-bottom:1px solid var(--line);white-space:nowrap;user-select:none
+}
+table.grid th.sortable{cursor:pointer}
+table.grid th.sortable:hover{color:var(--text)}
+table.grid th.on{color:var(--blue)}
+table.grid td{padding:8px 8px 8px 0;border-bottom:1px solid var(--line-soft);vertical-align:top}
+table.grid tbody tr:hover{background:#fafbfd}
+td.mono,th.mono{font-family:ui-monospace,Consolas,monospace;font-size:14.5px;font-variant-numeric:tabular-nums}
+td.dim{color:var(--muted)}
+/* 当前计量口径对应的那一列，加粗 + 上色，便于一眼定位 */
+th.hot{color:var(--text)}
+th.hot.credit{color:#b45309}
+th.hot.tokens{color:#1d4ed8}
+td.hot{font-weight:600;background:rgba(37,99,235,.04)}
+td.hot.credit{color:#b45309;background:rgba(234,88,12,.055)}
+td.hot.tokens{color:#1d4ed8}
+.ellip{max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+.ellip.on{cursor:pointer}
+.ellip.on:hover{color:var(--blue)}
+.tag{
+  display:inline-block;font-size:13.5px;padding:1px 6px;border-radius:5px;border:1px solid var(--line);
+  background:var(--line-soft);color:var(--muted);white-space:nowrap
+}
+.tag.user{background:var(--blue-soft);border-color:#dbe6ff;color:#1d4ed8}
+.tag.notify{background:#f0f9ff;border-color:#dbeafe;color:#0369a1}
+.tag.command{background:#f0fdf4;border-color:#dcfce7;color:#15803d}
+.tag.compact{background:var(--violet-soft);border-color:#e9e3ff;color:var(--violet)}
+.tag.continue{background:var(--amber-soft);border-color:#ffe4d3;color:var(--amber)}
+.tag.orphan{background:#f3f4f6;border-color:#e5e7eb;color:#4b5563}
+.tag.model{background:#fff;border-color:var(--line);color:#374151;font-family:ui-monospace,Consolas,monospace}
+.tr-toggle{color:var(--hint);width:18px;display:inline-block;text-align:center}
+tr.expanded{background:#f7f9fd !important}
+tr.subrow>td{padding:0 0 10px 0;border-bottom:1px solid var(--line)}
+.subwrap{padding:10px 12px;background:#fbfcfe;border:1px solid var(--line);border-radius:10px}
+.subwrap h4{margin:0 0 9px;font-size:15px;font-weight:600}
+.subwrap .prompt{white-space:pre-wrap;word-break:break-word;background:#fff;border:1px solid var(--line);
+  border-radius:8px;padding:9px 11px;max-height:170px;overflow:auto;font-size:15px;line-height:1.6;margin-bottom:11px}
+table.subtable{width:100%;border-collapse:collapse;font-size:14.5px}
+table.subtable th{text-align:left;color:var(--hint);font-weight:500;padding:0 8px 5px 0;border-bottom:1px solid var(--line);white-space:nowrap}
+table.subtable td{padding:5px 8px 5px 0;border-bottom:1px solid var(--line-soft);font-variant-numeric:tabular-nums}
+table.subtable td.mono{font-family:ui-monospace,Consolas,monospace;font-size:13.5px;color:var(--muted)}
+.sub2{color:var(--hint);font-size:13.5px}
+
+.pager{display:flex;align-items:center;gap:10px;justify-content:flex-end;margin-top:13px;color:var(--muted);font-size:15px}
+.pager span{margin-right:auto}
+
+/* ---------- 档位卡 ---------- */
+.scene{margin-bottom:14px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.scene:last-child{margin-bottom:0}
+.scene .head{display:flex;align-items:center;gap:10px;padding:10px 13px;background:#fbfcfd;border-bottom:1px solid var(--line-soft);flex-wrap:wrap}
+.scene .head b{font-size:15.5px;font-weight:600}
+.scene .spacer{margin-left:auto;display:flex;gap:14px;color:var(--muted);font-size:14.5px;font-family:ui-monospace,Consolas,monospace}
+.scene table.subtable{padding:0 13px}
+.scene table.subtable th{background:#fbfcfd}
+
+.foot{display:flex;flex-direction:column;gap:4px;color:var(--hint);font-size:14px;text-align:center;padding-top:6px}
+.foot .attr{font-size:13.5px;line-height:1.65;max-width:900px;margin:2px auto 0;opacity:.85}
+
+.toast{
+  position:fixed;right:22px;bottom:22px;background:#1c1f23;color:#fff;border-radius:10px;
+  padding:10px 15px;font-size:15.5px;box-shadow:0 8px 24px rgba(16,24,40,.22);z-index:50;
+  opacity:0;transform:translateY(8px);transition:.22s;pointer-events:none
+}
+.toast.show{opacity:1;transform:translateY(0)}

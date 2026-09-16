@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WorkBuddy 用量看板</title>
+<link rel="icon" href="/static/favicon.svg?v=__ICON_V__" type="image/svg+xml">
+<!-- 不支持 SVG 图标的浏览器会去请求 /favicon.ico，服务端把它指到桌面快捷方式那个多尺寸 ico -->
+<link rel="icon" href="/favicon.ico?v=__ICON_V__" sizes="32x32">
+<link rel="apple-touch-icon" href="/favicon.ico?v=__ICON_V__">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<h2 class="sr-only">WorkBuddy token 与积分用量实时看板，可按账号、设备、项目、会话、轮次、模型与档位查看消耗明细。</h2>
+
+<header class="topbar">
+  <div class="brand">
+    <!-- 和标签页图标、桌面快捷方式用同一个图形（单一来源 = static/favicon.svg） -->
+    <img class="logo" src="/static/favicon.svg" alt="WorkBuddy 用量看板" width="36" height="36">
+    <div>
+      <h1>WorkBuddy 用量看板</h1>
+      <p class="sub">
+        <span id="liveDot" class="dot"></span>
+        <span id="liveText">连接中…</span>
+        <span class="sep">·</span>
+        <span id="rangeText">—</span>
+      </p>
+    </div>
+  </div>
+  <div class="topright">
+    <div class="metric-switch" id="metricSwitch" role="group" aria-label="计量口径">
+      <button data-metric="credit" class="on" title="按积分消耗统计（默认）">积分</button>
+      <button data-metric="tokens" title="按 token 数量统计">Tokens</button>
+    </div>
+    <div class="idents" id="idents"></div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section class="card monthbar" id="monthBar"></section>
+
+  <section class="kpis" id="kpis"></section>
+
+  <section class="card filterbar">
+    <div class="filters">
+      <label class="fld"><span>起</span><input type="date" id="fFrom"></label>
+      <label class="fld"><span>止</span><input type="date" id="fTo"></label>
+      <label class="fld"><span>项目</span><select id="fProject"></select></label>
+      <label class="fld"><span>会话</span><select id="fSession"></select></label>
+      <label class="fld"><span>实际模型</span><select id="fModel"></select></label>
+      <label class="fld"><span>档位</span><select id="fScene"></select></label>
+      <label class="fld grow"><span>关键词</span><input type="search" id="fQ" placeholder="搜提问内容 / 项目名"></label>
+      <div class="fld actions">
+        <button id="btnReset" class="ghost">重置</button>
+        <button id="btnRefresh" class="ghost">刷新</button>
+        <button id="btnCsv" class="ghost">导出 CSV</button>
+      </div>
+    </div>
+  </section>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="overview" class="on">总览</button>
+    <button data-tab="turns">轮次明细</button>
+    <button data-tab="sessions">会话</button>
+    <button data-tab="models">模型与档位</button>
+  </nav>
+
+  <div id="panel-overview" class="panel">
+    <section class="card">
+      <h3><span id="seriesTitle">每日消耗分布</span>
+        <span class="hint" id="seriesHint"></span>
+        <span class="right">
+          <span class="switch" id="rangeSwitch">
+            <button data-range="all" class="on">全部</button>
+            <button data-range="month">按月</button>
+            <button data-range="week">按周</button>
+            <button data-range="day">按日</button>
+          </span>
+          <select id="rangePick" class="mini hide"></select>
+          <span class="switch" id="dimSwitch">
+            <button data-dim="model" class="on">模型</button>
+            <button data-dim="project">项目</button>
+            <button data-dim="session">会话</button>
+          </span>
+        </span>
+      </h3>
+      <div id="seriesTotal" class="chart-total"></div>
+      <div id="seriesChart" class="chart"></div>
+      <div class="legend" id="seriesLegend"></div>
+    </section>
+
+    <div class="cols">
+      <section class="card fill">
+        <h3>24 小时分布
+          <span class="hint" id="hourHint">全部日期合计</span>
+          <span class="right"><select id="hourDay" class="mini"></select></span>
+        </h3>
+        <div id="hourChart" class="chart fillchart"></div>
+      </section>
+      <section class="card">
+        <h3>项目排行 <span class="hint" id="rankProjectHint">按积分</span></h3>
+        <div id="rankProject" class="ranklist"></div>
+      </section>
+    </div>
+    <div class="cols">
+      <section class="card">
+        <h3>会话排行 <span class="hint" id="rankSessionHint">按积分</span></h3>
+        <div id="rankSession" class="ranklist"></div>
+      </section>
+      <section class="card">
+        <h3>模型排行 <span class="hint" id="rankModelHint">按积分</span></h3>
+        <div id="rankModel" class="ranklist"></div>
+      </section>
+    </div>
+  </div>
+
+  <div id="panel-turns" class="panel hide">
+    <section class="card">
+      <h3>轮次分布图
+        <span class="hint" id="turnChartHint"></span>
+        <span class="right">
+          <span class="switch" id="turnDimSwitch">
+            <button data-dim="model" class="on">模型</button>
+            <button data-dim="project">项目</button>
+            <button data-dim="session">会话</button>
+          </span>
+        </span>
+      </h3>
+      <div id="turnChart" class="chart"></div>
+      <div class="legend" id="turnLegend"></div>
+    </section>
+    <section class="card">
+      <h3>轮次明细 <span class="hint" id="turnsHint"></span> <span class="scrollhint" id="turnsScroll"></span></h3>
+      <div class="tablewrap">
+        <table class="grid" id="turnsTable">
+          <thead>
+            <tr>
+              <th class="sortable" data-k="start">时间</th>
+              <th>轮次</th>
+              <th>类型</th>
+              <th>提问</th>
+              <th>会话 / 项目</th>
+              <th class="sortable num" data-k="req">请求</th>
+              <th class="sortable num" data-k="tools">工具</th>
+              <th class="sortable num" data-k="inp">输入</th>
+              <th class="sortable num" data-k="out">输出</th>
+              <th class="sortable num" data-k="cached">缓存命中</th>
+              <th class="sortable num" data-k="total" data-metric-col="total">合计</th>
+              <th class="sortable num" data-k="credit" data-metric-col="credit">积分</th>
+              <th class="sortable num" data-k="duration">耗时</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <span id="pageInfo"></span>
+        <button id="prevPage" class="ghost">上一页</button>
+        <button id="nextPage" class="ghost">下一页</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="panel-sessions" class="panel hide">
+    <section class="card">
+      <h3>会话列表 <span class="hint" id="sessionsHint"></span> <span class="scrollhint" id="sessionsScroll"></span></h3>
+      <div class="tablewrap">
+        <table class="grid" id="sessionsTable">
+          <thead><tr>
+            <th>会话标题</th><th>项目</th><th>开始</th><th>结束</th>
+            <th class="num">轮次</th><th class="num">请求</th><th class="num">输入</th>
+            <th class="num">输出</th>
+            <th class="num" data-metric-col="total">合计</th>
+            <th class="num" data-metric-col="credit">积分</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div id="panel-models" class="panel hide">
+    <section class="card">
+      <h3>档位 → 实际承载模型 <span class="hint">自动档位到底跑在哪个模型上</span></h3>
+      <div id="sceneTable"></div>
+    </section>
+    <section class="card">
+      <h3>模型消耗详情 <span class="scrollhint" id="modelScroll"></span></h3>
+      <div class="tablewrap">
+        <table class="grid" id="modelTable">
+          <thead><tr>
+            <th>模型</th><th class="num">请求</th><th class="num">输入</th><th class="num">输出</th>
+            <th class="num">缓存命中</th><th class="num">思考</th><th class="num" data-metric-col="total">合计</th>
+            <th class="num" data-metric-col="credit">积分</th><th class="num" data-metric-col="credit">单请求均价</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <footer class="foot">
+    <span id="footInfo"></span>
+    <span>数据来源：<code id="footDir"></code> · 全部离线读取，不上传任何数据</span>
+    <span id="attrNote" class="attr"></span>
+  </footer>
+</div>
+
+<div id="toast" class="toast hide"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="WorkBuddy 用量看板">
+  <!-- 与 icon.ico（桌面快捷方式）同一个造型和同一组几何参数：
+       圆角方块 + 三根渐次升高的柱。
+       绿色取自 WorkBuddy 官方图标（tools/sample_icon.py 采样得到），
+       是**青绿 → 绿**的色相渐变（两端都亮），不是明暗渐变。
+       改色只动这两个 stop，别改下面的坐标 —— 坐标要和 make_icon.py 保持一致，
+       否则快捷方式图标和网页图标会长得不一样。 -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0ec8a9"/>
+      <stop offset="1" stop-color="#16cb82"/>
+    </linearGradient>
+  </defs>
+  <rect x="6" y="6" width="244" height="244" rx="58" fill="url(#bg)"/>
+  <g fill="#ffffff">
+    <rect x="41" y="134" width="46" height="62" rx="10" opacity="0.70"/>
+    <rect x="105" y="100" width="46" height="96" rx="10" opacity="0.86"/>
+    <rect x="169" y="62" width="46" height="134" rx="10"/>
+  </g>
+</svg>
