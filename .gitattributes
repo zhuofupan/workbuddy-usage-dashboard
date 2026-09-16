@@ -5,8 +5,9 @@
 * text=auto
 
 # 但下面这些**必须**是 CRLF，跟平台无关：
-#   cmd.exe 按 ANSI 逐字节读 .bat，换行不对会直接不执行（见 README「启动方式为什么这么设计」）；
-#   wscript 读 .vbs 同理。
+#   cmd.exe 按系统 ANSI 逐字节读 .bat，换行不对会直接不执行；
+#   Windows 脚本宿主读 .vbs 同理。
+# 这是通用要求，不是某台机器的特例 —— 所以别把 eol=crlf 去掉。
 *.bat text eol=crlf
 *.cmd text eol=crlf
 *.vbs text eol=crlf
