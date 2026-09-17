@@ -272,19 +272,62 @@ function drawGroupedBars(el, cfg) {
   // 几十像素（用户连着反馈了两次「偏得有点远」）。
   // 改法：名字的 x 直接按**末点圆右缘 + 缝**算，栏宽只作为"不要压到刻度"的下限。
   const NAME_GAP = 18;                     // 末点圆右缘 → 名字左缘的净缝（用户逐步放宽：7 → 12 → 18）
-  const TICK_W = 58;                       // 右轴刻度栏
-  // 名字栏按最宽的口径名估宽（"Tokens" 6 字 @15px 粗体 ≈ 55px），
-  // 再加名字右缘与刻度栏之间的呼吸位 —— 否则名字尾部会压到刻度上（踩过）。
-  // ⚠️ 字号跟着模式变（当前口径更大，见 .axis-name.on），所以按**最大的那档**算。
-  const nameW = dual.length
-    ? Math.max(28, Math.round(Math.max(...dual.map((l) => String(l.label || '').length)) * 9.2))
-    : 0;
-  const NAME_W = nameW + Math.max(11, NAME_GAP + 4);
-  const padR = dual.length ? NAME_W + TICK_W : 14;
-  const padL = 60, padT = dual.length ? 18 : 12;
-  const padB = dual.length ? 32 : 28;
   // 顶上留 8% 余量：折线的最高点不能贴着上沿
   const HEAD = 1.08;
+  /* 文字宽度估算：**必须区分中文与拉丁**，不能再用一个笼统的"9.2px/字"。
+     实测（无头 Chrome 量 getBoundingClientRect，见 .verify/name_text_width.js）：
+       「Tokens」 6 个拉丁字  12.5px/600 → 43.11px（7.18/字）  15px/800 → 53.08px（8.85/字）
+       「积分」   2 个汉字     12.5px/600 → 25px   （12.50/字） 15px/800 → 30px   （15.00/字）
+       「13.70亿」5 字(3数字+2汉字) @14px/500 → 47.1px（混合）
+     ── 一个常量 9.2 同时低估汉字、高估拉丁，两边都错：
+        照 9.2 算「Tokens」得 55px（实际 53）、算「积分」得 18.4px（实际 30）。
+        汉字被低估 11px 会把刻度栏压住，拉丁被高估则白留白。
+     所以这里按"汉字/拉丁各计各的"来量：汉字 ≈ 1.0em，拉丁 ≈ 0.58em（实测比值）。 */
+  const CJK = /[\u2e80-\u9fff\uff00-\uffef\u3000-\u303f]/;
+  // 用 15px/800（放大档）作基准：名字栏要按最胖的那档预留才不会被压
+  const NAME_EM = 15, TICK_EM = 14;
+  const textW = (str, em, latinRatio) => {
+    let w = 0;
+    for (const ch of String(str)) w += CJK.test(ch) ? em : em * latinRatio;
+    return w;
+  };
+  /* 右轴刻度栏：只按**真正画在右边那条线**（axis === 'right'）的刻度文字量。
+     ⚠️ 不要拿两条线一起取 max —— 左轴那条是画在**左边**的，跟右栏宽度无关。
+     踩过：原先 `Math.max(...dual.map(...))` 把两条都算进来，
+     于是 Tokens 模式下右轴其实是积分（"2470.5" 31px，短），
+     却被 Tokens 的 "13.70亿"（49px）撑宽 → 刻度右边白留 27.8px（探针实测）。
+     兜底留 2px：刻度文字是贴左对齐的（text-anchor="start"），右边不需要再留呼吸位。 */
+  const rightLine = dual.filter((l) => l.axis === 'right')[0];
+  const tickTextMax = rightLine
+    ? textW(rightLine.fmt(Math.max(1, ...(rightLine.values || [1])) * HEAD), TICK_EM, 0.58)
+    : 0;
+  const TICK_W = Math.round(tickTextMax) + 2;
+  /* 名字栏宽度**必须按名字自己的摆法反推**，不能独立估一个数。
+     名字的 x 是 nx = X(末点) + dotR + NAME_GAP（见下方 nx），而 X(末点) 通常正好落在
+     绘图区右边界 plotRight 上 —— 于是名字实际占用的是
+        [plotRight + dotR + NAME_GAP , plotRight + dotR + NAME_GAP + 名字宽]
+     而刻度栏从 plotRight + NAME_W 开始。要让名字不压刻度，必须有
+        NAME_W >= dotR + NAME_GAP + 名字宽(max) + NAME_PAD
+     ── 之前 NAME_W 只是"名字宽 + 4"，漏掉了 dotR + NAME_GAP 这 21~22.6px，
+        于是实测里 Tokens 的名字尾巴越过刻度栏 2.4px（探针抓到）。
+     注意 dotR 与字号都跟 on/dim 档有关：on → r=4.6 / 15px，dim → r=3 / 12.5px，
+     两档各算一遍取大者，才不会切换口径时突然叠字。
+     NAME_PAD = 12 是**肉眼可读**的最小间距：先前只留 2px 时几何上"不重叠"，
+     但截图里 15px/800 的「积分」紧贴右轴刻度「0」（末值小的时候名字正好与底部刻度同高），
+     糊成一团 —— 几何合格 ≠ 看着舒服，这条是看截图才发现的。 */
+  const NAME_PAD = 12;
+  const nameNeed = dual.length
+    ? Math.max(...dual.map((l) => {
+      const r = l.dim ? 3 : 4.6;
+      const em = l.dim ? 12.5 : NAME_EM;          // 与 .axis-name.dim / .on 的字号对应
+      const lat = l.dim ? 0.575 : 0.60;           // dim 是 600 字重，拉丁略窄
+      return r + NAME_GAP + textW(l.label || '', em, lat);
+    }))
+    : 0;
+  const NAME_W = Math.round(Math.max(28, nameNeed)) + NAME_PAD;
+  const padR = dual.length ? NAME_W + TICK_W : 14;
+  const padT = dual.length ? 18 : 12;
+  const padB = dual.length ? 32 : 28;
   if (!days.length || !series.length) {
     el.innerHTML = '<p class="note" style="padding:26px 0;text-align:center">当前筛选下没有数据</p>';
     return;
@@ -293,13 +336,24 @@ function drawGroupedBars(el, cfg) {
   series.forEach((s) => s.values.forEach((v) => { if (v > max) max = v; }));
   // 柱子也要按同一个余量缩放，否则柱子会比折线"显得更高"，两个口径看起来不一致
   max *= HEAD;
+  const fmt = cfg.fmt || fmtTok;
+  // 左轴刻度栏同理：按**实际最长刻度**量（14px），不再写死 60px。
+  // 积分档的 "2246.4" 是纯拉丁（约 7.37/字 @13.5px），Tokens 档是 "28.62亿" 混合（汉字更宽），
+  // 用同一个 textW() 才两边都对。
+  const leftTextMax = textW(fmt(max), TICK_EM, 0.58);
+  const padL = Math.max(38, Math.round(leftTextMax) + 15);
   const iw = W - padL - padR, ih = H - padT - padB;
   const n = days.length, k = series.length;
-  const cluster = iw / n;
+  // 每天占一格；**最后一格的中心**若按 iw/n 铺就离右边界还差半格，
+  // 那半格（6 天时约 73px）叠加在右栏上，就是用户看到的"右边空这么多"。
+  // 所以格宽按 (n-1) 段铺开：首格中心贴绘图区左边界、末格中心贴右边界，
+  // 柱子与折线共用同一个 X —— 既消掉死区，又保证"点仍在当天柱子上方"。
+  const cluster = n === 1 ? iw : iw / Math.max(1, n - 1);
   const gap = 2.5;
-  const barW = Math.max(2, Math.min(26, (cluster * 0.74 - gap * (k - 1)) / k));
-  const fmt = cfg.fmt || fmtTok;
-  const X = (i) => padL + cluster * i + cluster / 2;
+  const barW = Math.max(2, Math.min(26, (cluster * 0.62 - gap * (k - 1)) / k));
+  const X = (i) => (n === 1 ? padL + iw / 2 : padL + cluster * i);
+  // 柱簇沿 X 居中展开（与折线点严格同 x）
+  const barX0 = (i) => X(i) - (barW * k + gap * (k - 1)) / 2;
 
   let g = '';
   axisTicks(max, ih, padT).forEach((t) => {
@@ -308,8 +362,8 @@ function drawGroupedBars(el, cfg) {
   });
   let bars = '';
   days.forEach((day, di) => {
-    const groupW = barW * k + gap * (k - 1);
-    const x0 = padL + cluster * di + (cluster - groupW) / 2;
+    // 柱子以 X(di) 为中心展开，跟折线点严格同 x（见 barX0 定义）
+    const x0 = barX0(di);
     series.forEach((s, si) => {
       const v = s.values[di] || 0;
       const h = Math.max(v > 0 ? 2 : 0.6, (v / max) * ih);
@@ -346,8 +400,19 @@ function drawGroupedBars(el, cfg) {
     // 末点若已顶到绘图区右边界，名字就落在边界外侧的留白里，
     // 这正好是"最后一个点的后面"；若末点靠左（数据少/窄屏），名字就跟过去，
     // 而不是死钉在栏首 —— 这是"看上去离得远"的根因。
-    [L, R].forEach((ln) => {
-      if (!ln || !ln.values || !ln.values.length) return;
+    /* 先算出两个名字各自的"理想位置"，再统一做纵向避让 ——
+       因为它们可能落在同一条水平线上。
+       ⚠️ 这是真实存在过的 bug（且一直没被发现）：两条折线的末值都很小
+       （例如都接近 0）时，两个名字的 y 只差 2px，于是在右侧叠成一团，
+       截图里表现为「Tokens 上面盖着一个淡淡的积分」。
+       探针 .verify/probe_right_gap.js 的「越界检查 2」专门盯这条。
+       做法：按 y 排序后，从上往下保证相邻两个名字至少隔开 NAME_MIN_DY。 */
+    /* NAME_MIN_DY = 20：两行名字的最小基线距。
+       实测（探针「越界检查 2」）：dim 档(12.5px) 文字框高 16px、on 档(15px) 框高 20px，
+       两个框不交需要基线距 ≥ (20+16)/2 = 18px；取 20 留 2px 余量。
+       （先前取 17 时 credit 模式下两框仍相交 2px —— 差一点点也是叠字。） */
+    const NAME_MIN_DY = 20;
+    const placed = [L, R].filter((ln) => ln && ln.values && ln.values.length).map((ln) => {
       // 与 dualLines 用**同一个** max/HEAD 换算末点 y，保证名字正好落在末点旁
       const lmax = Math.max(1, ...ln.values) * HEAD;
       const lastV = ln.values[ln.values.length - 1] || 0;
@@ -358,6 +423,19 @@ function drawGroupedBars(el, cfg) {
       const dotR = ln.dim ? 3 : 4.6;
       const dotX = X(ln.values.length - 1);
       const nx = dotX + dotR + NAME_GAP;
+      return { ln, ty, nx };
+    });
+    // 纵向避让：从上往下推，谁跟上一个太近就往下让
+    placed.sort((a, b) => a.ty - b.ty);
+    for (let i = 1; i < placed.length; i++) {
+      const want = placed[i - 1].ty + NAME_MIN_DY;
+      if (placed[i].ty < want) placed[i].ty = want;
+    }
+    // 让完以后整体可能吊出绘图区下沿，再整体往上推回来
+    const spill = placed.length ? placed[placed.length - 1].ty - (padT + ih) : 0;
+    if (spill > 0) placed.forEach((p) => { p.ty -= spill; });
+
+    placed.forEach(({ ln, ty, nx }) => {
       // 字体跟着模式变：当前口径（跟柱子同侧那条）加粗放大，另一口径缩小淡化 ——
       // 与折线的"实心 / 淡出"主次保持一致，扫一眼就知道现在在看哪个口径。
       bars += `<text class="axis-name${ln.dim ? ' dim' : ' on'}" x="${nx.toFixed(1)}" y="${ty.toFixed(1)}"
@@ -373,6 +451,11 @@ function drawGroupedBars(el, cfg) {
   });
   el.innerHTML = `<svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}"
     preserveAspectRatio="none">${g}${bars}${labels}</svg>`;
+  /* 把「绘图区左缘」回报给调用方 —— 注意是**绘图区左缘**，不是 padL。
+     左轴刻度是 text-anchor="end" 且锚在 padL - 9，所以刻度文字的右缘（= 绘图区左缘）
+     落在 padL - 9，而不是 padL。图例要对齐的是这条线，差 9px 肉眼能看出来。
+     （先用 padL 试过一版：图例比柱子多出 8.8px，探针量出来的。） */
+  return padL - 9;
 }
 
 function drawRank(el, rows, opt) {
@@ -744,12 +827,11 @@ async function renderSeries(s) {
       { axis: 'right', color: METRICS.credit.color, fmt: fmtCredit, label: METRICS.credit.label,
         values: lineCredit, dim: true },
     ];
-  drawGroupedBars($('#seriesChart'), {
+  const plotPadL = drawGroupedBars($('#seriesChart'), {
     days: labels, series, fmt: m.axisFmt, height: 250,
     lines: dual,
     xFmt: state.range === 'day' ? ((d) => d) : ((d) => d.slice(5)),
   });
-
   // 时段合计：两个口径都报，当前口径实心加粗、另一口径淡显（和图里两条线的明暗一致）
   const grandCredit = lineCredit.reduce((a, b) => a + b, 0) || 0;
   const grandTok = lineTok.reduce((a, b) => a + b, 0) || 0;
@@ -764,7 +846,15 @@ async function renderSeries(s) {
 
   // 图例只列各实体（合计那行已经在图上方单独显示了）
   const base = grandCredit || 1;
-  $('#seriesLegend').innerHTML = series.length
+  /* 图例左缘对齐**绘图区左缘**（= 左轴刻度文字右缘），而不是卡片内缘。
+     踩过：图例是块级元素，默认贴卡片 padding 内缘（x=91），而绘图区左缘在 x=129.2
+     —— 因为 padL 要容下左轴刻度，图例却不需要，于是图例比柱子硬生生左出 38.2px。
+     这里用 drawGroupedBars 回报的 padL 做负 margin → 首项色块正好落在柱子左边缘。
+     ⚠️ 卡片内容区宽 W 与 padL 的关系：W - padL 必须仍容得下一行图例，
+        否则会折行。所以配 .legend{text-indent} 只能靠 CSS 变量控制，不能写死。 */
+  const lg = $('#seriesLegend');
+  lg.style.setProperty('--plot-pad-l', (plotPadL || 0) + 'px');
+  lg.innerHTML = series.length
     ? series.map((x) => `<span class="lg" title="${esc(x.label)}">`
         + `<i style="background:${x.color}"></i>${esc(oneLine(x.name, x.dis ? 13 : 22))}`
         + (x.dis ? `<span class="sub2">${esc(x.dis)}</span>` : '')

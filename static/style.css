@@ -183,9 +183,14 @@ button:disabled{opacity:.45;cursor:default}
 .axis-name.on{font-size:15px;font-weight:800;letter-spacing:.35px}
 .axis-name.dim{font-size:12.5px;font-weight:600;letter-spacing:0;opacity:.62}
 .axis-line{stroke:var(--line);stroke-width:1}
+/* 分布趋势的图例：色块 + 名称 + 该项合计。
+   --plot-pad-l 由 app.js 按图表实际 padL 写入，用来把整块图例右移到「绘图区左缘」
+   （= 左轴刻度文字的右缘），使首项色块与柱子的左边缘严格对齐 —— 否则图例会贴在
+   卡片 padding 内缘，比柱子左出一截（实测 38.2px），看着不像和图表一套。
+   同时把右护栏扣掉同样的宽度，避免右移之后最后一项溢出卡片而折行。 */
 .legend{display:flex;gap:6px 18px;flex-wrap:wrap;margin-top:10px;font-size:15px;color:var(--muted)}
+#seriesLegend{margin-left:var(--plot-pad-l,0px);max-width:calc(100% - var(--plot-pad-l,0px))}
 .legend i{display:inline-block;width:9px;height:9px;border-radius:2.5px;margin-right:5px;vertical-align:-1px}
-/* 分布趋势的图例：色块 + 名称 + 该项合计 */
 .legend .lg{display:inline-flex;align-items:center;gap:6px;max-width:100%}
 .legend .lg i{width:14px;height:4px;border-radius:2px;margin:0;flex:none}
 .legend .lg b{font-family:ui-monospace,Consolas,monospace;font-weight:600;color:var(--text)}
