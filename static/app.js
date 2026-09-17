@@ -219,35 +219,93 @@ function drawLines(el, cfg) {
     preserveAspectRatio="none">${g}${body}${labels}</svg>`;
 }
 
-/* 分组柱状图（分布趋势的"柱状"形态）：每天一组，组内每个实体一根细柱 */
+/* 坐标轴刻度：把 0..max 三等分，返回 [{v, y}]（自顶向下）。
+   右轴的量纲跟左轴不是一个数量级（积分 ~10²，Tokens ~10⁹），所以两条轴各自独立换算。 */
+function axisTicks(max, ih, padT) {
+  const out = [];
+  for (let i = 0; i <= 2; i++) out.push({ v: max * (1 - i / 2), y: padT + (ih * i) / 2 });
+  return out;
+}
+
+/* 「积分 + Tokens」双轴折线：画在同一个坐标系里，各有各的纵轴。
+   两条线都画，靠**透明度**区分主次：当前选中口径不透明、另一条降到 0.32，
+   这样"两个口径同时可见、但一眼看得出现在在看哪个"。
+   返回 SVG 片段（被 drawGroupedBars 与 drawBars 复用）。 */
+function dualLines(cfg) {
+  const lines = (cfg.lines || []).filter((l) => l && l.values && l.values.length);
+  if (!lines.length) return '';
+  const X = cfg.X;
+  const padT = cfg.padT, ih = cfg.ih;
+  let svg = '';
+  lines.forEach((l) => {
+    // 每条线用自己的上限换算 y —— 这就是"双轴"的实质。
+    // 上限统一用 cfg.headroom 放大（顶上留白），否则最高点会正好贴在绘图区上沿、
+    // 跟顶部轴名撞在一起（踩过）。
+    const max = Math.max(1, ...l.values) * (cfg.headroom || 1);
+    const dim = l.dim ? 0.32 : 1;                     // 非当前口径 → 降透明
+    const pts = l.values.map((v, i) => `${X(i).toFixed(1)},${(padT + ih - (v / max) * ih).toFixed(1)}`).join(' ');
+    svg += `<polyline points="${pts}" fill="none" stroke="${l.color}" stroke-width="${dim < 1 ? 2.2 : 3.4}"
+      stroke-opacity="${dim}" stroke-linejoin="round" stroke-linecap="round"
+      ${l.dash ? `stroke-dasharray="${l.dash}"` : ''}/>`;
+    l.values.forEach((v, i) => {
+      svg += `<circle cx="${X(i).toFixed(1)}" cy="${(padT + ih - (v / max) * ih).toFixed(1)}"
+        r="${dim < 1 ? 3 : 4.6}" fill="#fff" stroke="${l.color}"
+        stroke-width="${dim < 1 ? 1.8 : 2.6}" stroke-opacity="${dim}"
+        ><title>${esc(l.label)}　${esc(cfg.days[i] != null ? cfg.days[i] : i)}　${esc(l.fmt(v))}</title></circle>`;
+    });
+  });
+  return svg;
+}
+
+/* 分组柱状图（分布趋势的"柱状"形态）：每天一组，组内每个实体一根细柱。
+   叠加两条折线（积分 / Tokens），左右双轴 —— 两条线各自独立缩放，
+   当前口径那条实心、另一条降透明。 */
 function drawGroupedBars(el, cfg) {
   const days = cfg.days || [];
   const series = (cfg.series || []).filter((s) => s.values && s.values.length);
+  const dual = (cfg.lines || []).filter((l) => l && l.values && l.values.length);
   const W = Math.max(el.clientWidth || 640, 320);
   const H = cfg.height || 214;
-  const padL = 60, padR = 14, padT = 12, padB = 28;
+  // 右侧要放两样东西，从内到外依次是：口径名 → 右轴刻度。
+  // 关键：**口径名必须紧跟自己那条折线的末点**，而末点常把绘图区右边界占满，
+  // 所以不能"预留一整栏然后把名字钉在栏首" —— 那样名字与末点之间会裂开
+  // 几十像素（用户连着反馈了两次「偏得有点远」）。
+  // 改法：名字的 x 直接按**末点圆右缘 + 缝**算，栏宽只作为"不要压到刻度"的下限。
+  const NAME_GAP = 18;                     // 末点圆右缘 → 名字左缘的净缝（用户逐步放宽：7 → 12 → 18）
+  const TICK_W = 58;                       // 右轴刻度栏
+  // 名字栏按最宽的口径名估宽（"Tokens" 6 字 @15px 粗体 ≈ 55px），
+  // 再加名字右缘与刻度栏之间的呼吸位 —— 否则名字尾部会压到刻度上（踩过）。
+  // ⚠️ 字号跟着模式变（当前口径更大，见 .axis-name.on），所以按**最大的那档**算。
+  const nameW = dual.length
+    ? Math.max(28, Math.round(Math.max(...dual.map((l) => String(l.label || '').length)) * 9.2))
+    : 0;
+  const NAME_W = nameW + Math.max(11, NAME_GAP + 4);
+  const padR = dual.length ? NAME_W + TICK_W : 14;
+  const padL = 60, padT = dual.length ? 18 : 12;
+  const padB = dual.length ? 32 : 28;
+  // 顶上留 8% 余量：折线的最高点不能贴着上沿
+  const HEAD = 1.08;
   if (!days.length || !series.length) {
     el.innerHTML = '<p class="note" style="padding:26px 0;text-align:center">当前筛选下没有数据</p>';
     return;
   }
   let max = 1;
   series.forEach((s) => s.values.forEach((v) => { if (v > max) max = v; }));
-  // 组合形态下还要画出"当日合计"的线：上限要包含合计，否则线会冲出画面
-  const totals = (cfg.total && cfg.total.length) ? cfg.total : null;
-  if (totals) max = Math.max(max, ...totals);
+  // 柱子也要按同一个余量缩放，否则柱子会比折线"显得更高"，两个口径看起来不一致
+  max *= HEAD;
   const iw = W - padL - padR, ih = H - padT - padB;
   const n = days.length, k = series.length;
   const cluster = iw / n;
   const gap = 2.5;
   const barW = Math.max(2, Math.min(26, (cluster * 0.74 - gap * (k - 1)) / k));
   const fmt = cfg.fmt || fmtTok;
+  const X = (i) => padL + cluster * i + cluster / 2;
 
   let g = '';
-  for (let i = 0; i <= 2; i++) {
-    const y = padT + (ih * i) / 2;
-    g += `<line class="axis-line" x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}"/>`;
-    g += `<text class="axis-label" x="${padL - 9}" y="${(y + 4).toFixed(1)}" text-anchor="end">${esc(fmt(max * (1 - i / 2)))}</text>`;
-  }
+  axisTicks(max, ih, padT).forEach((t) => {
+    g += `<line class="axis-line" x1="${padL}" y1="${t.y.toFixed(1)}" x2="${(W - padR).toFixed(1)}" y2="${t.y.toFixed(1)}"/>`;
+    g += `<text class="axis-label" x="${padL - 9}" y="${(t.y + 4).toFixed(1)}" text-anchor="end">${esc(fmt(t.v))}</text>`;
+  });
   let bars = '';
   days.forEach((day, di) => {
     const groupW = barW * k + gap * (k - 1);
@@ -260,17 +318,50 @@ function drawGroupedBars(el, cfg) {
         height="${h.toFixed(1)}" rx="1.5" fill="${s.color}"><title>${esc(s.label || s.name)}　${esc(day)}　${esc(fmt(v))}</title></rect>`;
     });
   });
-  // 组合形态：叠加一条"当日合计"折线
-  if (totals) {
-    // 合计线是这张图的"重点"，所以画粗一点、点也大一点
-    bars += `<polyline points="${totals.map((v, i) => `${(padL + cluster * i + cluster / 2).toFixed(1)},${(padT + ih - (v / max) * ih).toFixed(1)}`).join(' ')}"
-      fill="none" stroke="${cfg.totalColor || '#0f172a'}" stroke-width="3.2"
-      stroke-linejoin="round" stroke-linecap="round"/>`;
-    totals.forEach((v, i) => {
-      bars += `<circle cx="${(padL + cluster * i + cluster / 2).toFixed(1)}"
-        cy="${(padT + ih - (v / max) * ih).toFixed(1)}" r="4.6" fill="#fff"
-        stroke="${cfg.totalColor || '#0f172a'}" stroke-width="2.6"
-        ><title>${esc(days[i])}　合计 ${esc(fmt(v))}</title></circle>`;
+  // 双折线（积分 / Tokens），各自一个纵轴
+  bars += dualLines({ lines: dual, X, padT, ih, days, headroom: HEAD });
+
+  // 双轴：**左轴 = 当前口径（柱子的口径）**，右轴 = 另一个口径。
+  // 关键点是「轴归属稳定」：切开关时左轴始终服务柱子、右轴始终服务那条对照线，
+  // 所以左轴刻度用 cfg.fmt（跟着柱子走）、右轴刻度用对照线自己的 fmt ——
+  // 曾经把左轴写死成积分格式，结果 Tokens 模式下把 1356 积分 打成「13.56亿」（踩过）。
+  if (dual.length) {
+    const R = dual.filter((l) => l.axis === 'right')[0];
+    const L = dual.filter((l) => l.axis === 'left')[0];
+    // 两条右栏的位置：绘图区右边界 → 口径名 → 右轴刻度（最外）
+    const plotRight = W - padR;
+    const tickX = (plotRight + NAME_W).toFixed(1);
+    // 右轴刻度：用对照线自己的格式（那是它自己的量纲）
+    if (R) {
+      const rmax = Math.max(1, ...R.values) * HEAD;
+      axisTicks(rmax, ih, padT).forEach((t) => {
+        bars += `<text class="axis-label" x="${tickX}" y="${(t.y + 4).toFixed(1)}"
+          fill="${R.color}" text-anchor="start">${esc(R.fmt(t.v))}</text>`;
+      });
+    }
+    // 口径名：**直接捕捉各自那条折线末点的位置**，紧贴末点右侧、同一水平线。
+    // 两层约束：
+    //   下界 = 末点圆右缘 + NAME_GAP  → 不骑在点上
+    //   上界 = 绘图区右边界 + NAME_FLOOR 之前必须收住 → 不压右轴刻度
+    // 末点若已顶到绘图区右边界，名字就落在边界外侧的留白里，
+    // 这正好是"最后一个点的后面"；若末点靠左（数据少/窄屏），名字就跟过去，
+    // 而不是死钉在栏首 —— 这是"看上去离得远"的根因。
+    [L, R].forEach((ln) => {
+      if (!ln || !ln.values || !ln.values.length) return;
+      // 与 dualLines 用**同一个** max/HEAD 换算末点 y，保证名字正好落在末点旁
+      const lmax = Math.max(1, ...ln.values) * HEAD;
+      const lastV = ln.values[ln.values.length - 1] || 0;
+      const y = padT + ih - (lastV / lmax) * ih;
+      // 末点贴上下沿时把文字收进绘图区，避免飘出去
+      const ty = Math.min(padT + ih, Math.max(padT, y)) + 4.5;
+      // 末点圆的右缘（dim=false → r=4.6；dim=true → r=3），再留 NAME_GAP 的缝
+      const dotR = ln.dim ? 3 : 4.6;
+      const dotX = X(ln.values.length - 1);
+      const nx = dotX + dotR + NAME_GAP;
+      // 字体跟着模式变：当前口径（跟柱子同侧那条）加粗放大，另一口径缩小淡化 ——
+      // 与折线的"实心 / 淡出"主次保持一致，扫一眼就知道现在在看哪个口径。
+      bars += `<text class="axis-name${ln.dim ? ' dim' : ' on'}" x="${nx.toFixed(1)}" y="${ty.toFixed(1)}"
+        fill="${ln.color}" text-anchor="start">${esc(ln.label)}</text>`;
     });
   }
   const xf = cfg.xFmt || ((d) => d.slice(5));
@@ -278,7 +369,7 @@ function drawGroupedBars(el, cfg) {
   let labels = '';
   days.forEach((d, i) => {
     if (i % every && i !== n - 1) return;
-    labels += `<text class="axis-label" x="${(padL + cluster * i + cluster / 2).toFixed(1)}" y="${H - 7}" text-anchor="middle">${esc(xf(d))}</text>`;
+    labels += `<text class="axis-label" x="${X(i).toFixed(1)}" y="${H - 7}" text-anchor="middle">${esc(xf(d))}</text>`;
   });
   el.innerHTML = `<svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}"
     preserveAspectRatio="none">${g}${bars}${labels}</svg>`;
@@ -605,9 +696,11 @@ async function renderSeries(s) {
   $('#seriesTitle').textContent = `${titlePrefix}消耗分布`;
   const scope = state.range === 'all' ? ''
     : `　范围＝${(rangeOptions(days).find((o) => o.key === state.rangeKey) || {}).label || state.rangeKey}`;
+  const oth = OTHER();
   $('#seriesHint').textContent =
     `柱＝按${DIM_LABEL[state.dim]}分布的${unit}${m.label}（${top.length}/${sorted.length} 个）`
-    + `　线＝${state.range === 'day' ? '每小时' : '每天'}的合计${scope}`;
+    + `　线＝每条${state.range === 'day' ? '每小时' : '每天'}合计：`
+    + `${m.label}（左轴·实心）＋ ${oth.label}（右轴·淡）${scope}`;
 
   const series = top.map((r, i) => ({
     name: r.name,
@@ -615,6 +708,8 @@ async function renderSeries(s) {
     label: r.name,
     color: SERIES_COLORS[i % SERIES_COLORS.length],
     values: r['values_' + m.key] || [],
+    // 两个口径的逐点序列都留着：柱子只画当前口径，但两条折线要用各自的
+    vals: { credit: r.values_credit || [], total: r.values_total || [] },
     total: r[m.key],
   }));
   // 展示名可能撞车（例如 hy4-preview 与 hy4-preview-f 都叫 "Hy4 preview"）。
@@ -629,25 +724,46 @@ async function renderSeries(s) {
     }
   });
 
-  const total = labels.map((_, i) => series.reduce((a, x) => a + (x.values[i] || 0), 0));
-  // 合计线用「当前口径」的颜色 —— 它代表整体，是这张图的重点
+  const useCredit = metric === 'credit';
+  // 两条折线：逐点合计，两个口径各一条。左右轴各自独立缩放 ——
+  // 积分(百)与 Tokens(亿) 量纲差 5~6 个数量级，共用一轴会把积分压成贴着 0 的直线。
+  const lineCredit = labels.map((_, i) => series.reduce((a, x) => a + ((x.vals.credit || [])[i] || 0), 0));
+  const lineTok = labels.map((_, i) => series.reduce((a, x) => a + ((x.vals.total || [])[i] || 0), 0));
+  // **左轴永远服务柱子和当前口径那条线，右轴服务另一口径** —— 这样轴归属稳定：
+  // 切开关时只有"谁的线实心、谁的刻度变主色"变化，轴的位置和含义不变。
+  const dual = useCredit
+    ? [
+      { axis: 'left', color: METRICS.credit.color, fmt: fmtCredit, label: METRICS.credit.label,
+        values: lineCredit, dim: false },
+      { axis: 'right', color: METRICS.tokens.color, fmt: fmtTok, label: METRICS.tokens.label,
+        values: lineTok, dim: true },
+    ]
+    : [
+      { axis: 'left', color: METRICS.tokens.color, fmt: fmtTok, label: METRICS.tokens.label,
+        values: lineTok, dim: false },
+      { axis: 'right', color: METRICS.credit.color, fmt: fmtCredit, label: METRICS.credit.label,
+        values: lineCredit, dim: true },
+    ];
   drawGroupedBars($('#seriesChart'), {
     days: labels, series, fmt: m.axisFmt, height: 250,
-    total, totalColor: m.color,
+    lines: dual,
     xFmt: state.range === 'day' ? ((d) => d) : ((d) => d.slice(5)),
   });
 
-  // 总和（= 折线的合计）单独放在图上方，并按当前粒度起名 —— 它不是"当日"，
-  // 而是所选时段的合计（全部/该月/该周/该日）
-  const grand = total.reduce((a, b) => a + b, 0) || 0;
+  // 时段合计：两个口径都报，当前口径实心加粗、另一口径淡显（和图里两条线的明暗一致）
+  const grandCredit = lineCredit.reduce((a, b) => a + b, 0) || 0;
+  const grandTok = lineTok.reduce((a, b) => a + b, 0) || 0;
   const totalLabel = { all: '所选范围合计', month: '该月合计', week: '该周合计', day: '该日合计' }[state.range]
     || '所选范围合计';
-  $('#seriesTotal').innerHTML = `<i style="background:${m.color}"></i><span>${esc(totalLabel)}</span>`
-    + `<b style="color:${m.color}">${esc(m.fmt(grand))}</b><em>${esc(m.label)}</em>`
-    + `<span class="sub2">（折线）</span>`;
+  const cell = (k, v, on) => `<i style="background:${k.color};opacity:${on ? 1 : 0.32}"></i>`
+    + `<span style="opacity:${on ? 1 : 0.62}">${esc(k.label)}</span>`
+    + `<b style="color:${k.color};opacity:${on ? 1 : 0.6}">${esc(k.fmt(v))}</b>`;
+  $('#seriesTotal').innerHTML = `<span>${esc(totalLabel)}</span>`
+    + cell(METRICS.credit, grandCredit, metric === 'credit')
+    + cell(METRICS.tokens, grandTok, metric === 'tokens');
 
   // 图例只列各实体（合计那行已经在图上方单独显示了）
-  const base = grand || 1;
+  const base = grandCredit || 1;
   $('#seriesLegend').innerHTML = series.length
     ? series.map((x) => `<span class="lg" title="${esc(x.label)}">`
         + `<i style="background:${x.color}"></i>${esc(oneLine(x.name, x.dis ? 13 : 22))}`
