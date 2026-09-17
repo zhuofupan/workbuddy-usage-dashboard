@@ -338,27 +338,54 @@ function drawGroupedBars(el, cfg) {
   max *= HEAD;
   const fmt = cfg.fmt || fmtTok;
   // 左轴刻度栏同理：按**实际最长刻度**量（14px），不再写死 60px。
-  // 积分档的 "2246.4" 是纯拉丁（约 7.37/字 @13.5px），Tokens 档是 "28.62亿" 混合（汉字更宽），
+  // 积分档的 "1234.5" 是纯拉丁（约 7.37/字 @13.5px），Tokens 档是 "28.62亿" 混合（汉字更宽），
   // 用同一个 textW() 才两边都对。
   const leftTextMax = textW(fmt(max), TICK_EM, 0.58);
-  const padL = Math.max(38, Math.round(leftTextMax) + 15);
+  /* TICK_GAP = 刻度文字右缘 → 绘图区左缘（= 首簇左缘）的净缝。
+     ⚠️ 三个地方必须同源用这一个常量，改一处忘一处必然出错：
+       ① padL 要给文字留出 TICK_GAP + 6（6 是文字左缘到画布边的呼吸位）；
+       ② 刻度文字锚在 padL - TICK_GAP（右对齐，右缘才落在 padL - TICK_GAP）；
+       ③ 函数 return 出去的"绘图区左缘"也是 padL - TICK_GAP —— 图例靠它对位。
+     历史：9px 时用户反馈"离左边的轴太近"，放宽到 18px。 */
+  const TICK_GAP = 18;
+  const padL = Math.max(38, Math.round(leftTextMax) + TICK_GAP + 6);
   const iw = W - padL - padR, ih = H - padT - padB;
   const n = days.length, k = series.length;
-  // 每天占一格；**最后一格的中心**若按 iw/n 铺就离右边界还差半格，
-  // 那半格（6 天时约 73px）叠加在右栏上，就是用户看到的"右边空这么多"。
-  // 所以格宽按 (n-1) 段铺开：首格中心贴绘图区左边界、末格中心贴右边界，
-  // 柱子与折线共用同一个 X —— 既消掉死区，又保证"点仍在当天柱子上方"。
-  const cluster = n === 1 ? iw : iw / Math.max(1, n - 1);
   const gap = 2.5;
-  const barW = Math.max(2, Math.min(26, (cluster * 0.62 - gap * (k - 1)) / k));
-  const X = (i) => (n === 1 ? padL + iw / 2 : padL + cluster * i);
+  /* 横向摆位：末点贴绘图区**右边界**（右栏还留给口径名和右轴刻度，位置是上一轮调好的，
+     不能动），首点**内缩半个簇宽**。
+     为什么必须内缩：柱簇是以当天折线点为圆心向左右展开的（barX0 = X - 簇宽/2），
+     若首点也贴左边界，第一天最左边那两根柱子就会伸进左轴刻度文字的栏里，
+     把刻度数字的末位盖住 —— 截图里数字只露一半，
+     用户报「左边显示不全」的根因就是这里（旧版只留了"文字宽 + 15px"，
+     而半个簇宽有 55~70px，必然亏空）。
+     内缩量取**半个簇宽**：首簇左缘正好落在绘图区左边界 padL 上，
+     与刻度文字（右缘锚在 padL - 9）固定留 9px，不多不少。
+     ⚠️ 簇宽 ← 点间距 ← 内缩量，三者互相咬住，是个不动点，迭代到收敛（3 轮内 <0.05px）。
+     （旧的"首格中心贴左边界、每天占 iw/(n-1) 一整格"写法已作废。） */
+  const layout = (inset) => {
+    const span = iw - inset;
+    const cluster = n === 1 ? span : span / Math.max(1, n - 1);
+    const barW = Math.max(2, Math.min(26, (cluster * 0.62 - gap * (k - 1)) / k));
+    return { cluster, barW, cw: barW * k + gap * (k - 1) };
+  };
+  let L = layout(0);
+  for (let it = 0; it < 4; it++) {
+    const nx = layout(n === 1 ? 0 : L.cw / 2);   // n=1 时柱簇本就居中，无需内缩
+    const done = Math.abs(nx.cluster - L.cluster) < 0.05;
+    L = nx;
+    if (done) break;
+  }
+  const cluster = L.cluster, barW = L.barW;
+  const inset = n === 1 ? 0 : L.cw / 2;
+  const X = (i) => (n === 1 ? padL + iw / 2 : padL + inset + cluster * i);
   // 柱簇沿 X 居中展开（与折线点严格同 x）
   const barX0 = (i) => X(i) - (barW * k + gap * (k - 1)) / 2;
 
   let g = '';
   axisTicks(max, ih, padT).forEach((t) => {
     g += `<line class="axis-line" x1="${padL}" y1="${t.y.toFixed(1)}" x2="${(W - padR).toFixed(1)}" y2="${t.y.toFixed(1)}"/>`;
-    g += `<text class="axis-label" x="${padL - 9}" y="${(t.y + 4).toFixed(1)}" text-anchor="end">${esc(fmt(t.v))}</text>`;
+    g += `<text class="axis-label" x="${padL - TICK_GAP}" y="${(t.y + 4).toFixed(1)}" text-anchor="end">${esc(fmt(t.v))}</text>`;
   });
   let bars = '';
   days.forEach((day, di) => {
@@ -451,11 +478,12 @@ function drawGroupedBars(el, cfg) {
   });
   el.innerHTML = `<svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}"
     preserveAspectRatio="none">${g}${bars}${labels}</svg>`;
-  /* 把「绘图区左缘」回报给调用方 —— 注意是**绘图区左缘**，不是 padL。
-     左轴刻度是 text-anchor="end" 且锚在 padL - 9，所以刻度文字的右缘（= 绘图区左缘）
-     落在 padL - 9，而不是 padL。图例要对齐的是这条线，差 9px 肉眼能看出来。
-     （先用 padL 试过一版：图例比柱子多出 8.8px，探针量出来的。） */
-  return padL - 9;
+  /* 回报给调用方的是**左轴刻度文字的右缘**（= padL - TICK_GAP），图例靠它对位。
+     注意它比真正的"绘图区左缘"（padL，也就是首簇左缘、网格线起点）还要左 TICK_GAP ——
+     这是当初图例对齐那一轮的结论（图例跟刻度文字右缘同一条竖线，见 .verify/README.md
+     「图例对齐」一节）。**改这个常量会让图例跟着左右移动**，改完要重跑那张各视口 delta 表。
+     （先用 padL 试过一版：图例比目标多出 8.8px，探针量出来的。） */
+  return padL - TICK_GAP;
 }
 
 function drawRank(el, rows, opt) {
