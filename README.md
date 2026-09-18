@@ -5,6 +5,12 @@
 
 只监听本机回环地址，不联网、不上传、不写任何 WorkBuddy 的文件。
 
+![看板总览](docs/overview.png)
+
+> 总览页实拍。**账号、设备、客户端、项目名都已打码**（看板本身也会把这几个字段默认遮起来），
+> 其余是真实数据：顶部状态条 →「**每日消耗分布**」（柱＝按模型拆分，实线＝每天合计走左轴积分、
+> 淡线＝Tokens 走右轴）→「24 小时分布」→「项目排行」。
+
 ---
 
 ## 快速开始
@@ -429,6 +435,7 @@ static/style.css       浅色主题样式
 static/app.js          前端逻辑（原生 JS，无框架、无 CDN，可离线）
 start.bat              带窗口启动（想看实时日志时用）
 stop.bat               停止看板
+docs/overview.png      README 顶部的界面截图（账号/设备/客户端/项目名已打码）
 static/favicon.svg     图标本体（**绿色圆角方块 + 三根上升柱**）：页头、标签页共用这一份
 config.example.json    配置模板：复制成 config.local.json 再改（个人数据只放这一个文件）
 .gitignore             挡住 config.local.json、日志、pid 等本地产物
